@@ -1,0 +1,30 @@
+{
+  "name": "simfra/translations-module",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/translations-module.js",
+  "module": "dist/translations-module.js",
+  "files": [
+    "dist",
+    "src",
+    "config",
+    "database",
+    "resources/lang",
+    "routes"
+  ],
+  "dependencies": {
+    "notivue": "^2.0.0",
+    "@inertiajs/vue3": "^2.0.0",
+
+    "vue": "^3.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  }
+}
