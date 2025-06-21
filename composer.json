@@ -22,10 +22,12 @@
   },
   "scripts": {
     "post-install-cmd": [
-      "@php artisan migrate --no-interaction || true"
+      "@php artisan migrate --no-interaction || true",
+      "@php artisan vendor:publish --tag=translations-module --force"
     ],
     "post-update-cmd": [
-      "@php artisan migrate --no-interaction || true"
+      "@php artisan migrate --no-interaction || true",
+      "@php artisan vendor:publish --tag=translations-module --force"
     ]
   }
 }
