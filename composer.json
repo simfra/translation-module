@@ -27,7 +27,7 @@
     ],
     "post-update-cmd": [
       "@php artisan migrate --no-interaction || true",
-      "@php artisan vendor:publish --tag=translations-module --force"
+      "@php artisan vendor:publish --tag=translations-all --force"
     ]
   }
 }

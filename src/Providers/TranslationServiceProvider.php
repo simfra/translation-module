@@ -46,7 +46,7 @@ class TranslationServiceProvider extends ServiceProvider
             __DIR__ . '/../../resources/js/pages' => resource_path('js/pages'),
             __DIR__ . '/../../resources/js/Components' => resource_path('js/Components'),
             __DIR__ . '/../../resources/lang' => resource_path('lang/vendor/translations-module'),
-        ], 'translations-all');
+        ], ['translations-all', 'translations-module']);
 
         $this->autoPublishResources();
         $this->registerInertiaComponents();
@@ -61,9 +61,17 @@ class TranslationServiceProvider extends ServiceProvider
 
     protected function autoPublishResources()
     {
-        // kopiowanie zasobów bez powielania
         $resources = [
-            // ...
+            [
+                'type' => 'directory',
+                'source' => __DIR__ . '/../../resources/js/pages',
+                'destination' => resource_path('js/pages'),
+            ],
+            [
+                'type' => 'directory',
+                'source' => __DIR__ . '/../../resources/js/Components',
+                'destination' => resource_path('js/Components'),
+            ],
         ];
         foreach ($resources as $r) {
             if ($r['type'] === 'file' && File::exists($r['source']) && !File::exists($r['destination'])) {
