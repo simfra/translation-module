@@ -48,7 +48,9 @@ class TranslationServiceProvider extends ServiceProvider
             __DIR__ . '/../../resources/lang' => resource_path('lang/vendor/translations-module'),
         ], ['translations-all', 'translations-module']);
 
-        $this->autoPublishResources();
+        if ($this->app->runningInConsole()) {
+            $this->autoPublishResources();
+        }
         $this->registerInertiaComponents();
     }
 
