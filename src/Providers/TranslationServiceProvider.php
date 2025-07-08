@@ -2,13 +2,13 @@
 
 namespace Simfra\TranslationsModule\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Translation\Translator;
 use Inertia\Inertia;
 use Simfra\TranslationsModule\DatabaseTranslationLoader;
-use Illuminate\Translation\Translator;
 
 class TranslationServiceProvider extends ServiceProvider
 {
@@ -16,9 +16,9 @@ class TranslationServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->commands([
-                \Simfra\TranslationsModule\Console\Commands\TranslationsInstallCommand::class,
-                \Simfra\TranslationsModule\Console\Commands\TranslationsUninstallCommand::class,
-                \Simfra\TranslationsModule\Console\Commands\PublishTranslationsCommand::class,
+                \Simfra\TranslationsModule\Console\Commands\Commands\TranslationsInstallCommand::class,
+                \Simfra\TranslationsModule\Console\Commands\Commands\TranslationsUninstallCommand::class,
+                \Simfra\TranslationsModule\Console\Commands\Commands\PublishTranslationsCommand::class,
             ]);
         }
         $this->mergeConfigFrom(__DIR__ . '/../../config/translations.php', 'translations');
@@ -47,6 +47,14 @@ class TranslationServiceProvider extends ServiceProvider
             __DIR__ . '/../../resources/js/Components' => resource_path('js/Components'),
             __DIR__ . '/../../resources/lang' => resource_path('lang/vendor/translations-module'),
         ], ['translations-all', 'translations-module']);
+
+        $this->publishes([
+            __DIR__ . '/../../database/migrations' => database_path('migrations'),
+            __DIR__ . '/../../resources/js/pages' => resource_path('js/pages'),
+            __DIR__ . '/../../resources/js/Components' => resource_path('js/Components'),
+            __DIR__ . '/../../resources/lang' => resource_path('lang/vendor/translations-module'),
+        ], [ 'laravel-assets']);
+
 
         if ($this->app->runningInConsole()) {
             $this->autoPublishResources();

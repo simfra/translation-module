@@ -13,13 +13,12 @@ use Exception;
 
 class TranslationController extends \App\Http\Controllers\Controller
 {
-    protected TranslationService $translationService;
+    protected $translationService; // Removed type declaration
 
     public function __construct(TranslationService $translationService)
     {
         $this->translationService = $translationService;
     }
-
 
     protected function langValidationRule(Request $request)
     {
@@ -76,7 +75,6 @@ class TranslationController extends \App\Http\Controllers\Controller
                 ->values()
                 ->toArray();
 
-            // Zawsze dodaj 'pozostałe' do listy grup
             if (!in_array('pozostałe', $groups)) {
                 $groups[] = 'pozostałe';
                 sort($groups);
@@ -169,7 +167,7 @@ class TranslationController extends \App\Http\Controllers\Controller
 
             $total = count($allKeys);
             $lastPage = (int) ceil($total / $perPage);
-            $currentPage = max(1, $lastPage);
+            $currentPage = max(1, min($page, $lastPage));
 
             $paginationSteps = $this->generatePaginationSteps($currentPage, $lastPage);
 
@@ -315,8 +313,6 @@ class TranslationController extends \App\Http\Controllers\Controller
             // Czyszczenie cache po zmianie
             $this->clearTranslationCache($lang, $key);
 
-            app()->setLocale('pl');
-            dd(__("auth.failed"));
             return response()->json([
                 'success' => true,
                 'message' => __('success.created'),
@@ -327,6 +323,17 @@ class TranslationController extends \App\Http\Controllers\Controller
                     'readonly' => $translation->readonly,
                 ],
             ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error in Translation store', [
+                'errors' => $e->errors(),
+                'request' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => __('validation_error'),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Illuminate\Database\QueryException $e) {
             \Log::error('Database error in Translation store', [
                 'message' => $e->getMessage(),
@@ -335,7 +342,7 @@ class TranslationController extends \App\Http\Controllers\Controller
 
             return response()->json([
                 'success' => false,
-                'message' => __('auth.failed'),
+                'message' => __('database_error'),
                 'error' => 'An error occurred while saving the translation.',
             ], 500);
         } catch (\Exception $e) {
@@ -388,6 +395,17 @@ class TranslationController extends \App\Http\Controllers\Controller
                 'message' => __('success.updated'),
                 'translations' => $updatedTranslations,
             ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error in Translation bulkStore', [
+                'errors' => $e->errors(),
+                'request' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => __('validation_error'),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Illuminate\Database\QueryException $e) {
             \Log::error('Database error in Translation bulkStore', [
                 'message' => $e->getMessage(),
@@ -415,51 +433,109 @@ class TranslationController extends \App\Http\Controllers\Controller
 
     public function import(Request $request)
     {
-        $validated = $request->validate([
-            'lang' => $this->langValidationRule($request),
-            'file' => 'required|file|mimetypes:application/json,text/plain|max:2048',
-        ]);
-
-        $lang = strtolower($validated['lang']);
-
         try {
-            $json = json_decode(file_get_contents($request->file('file')->getRealPath()), true);
+            $validated = $request->validate([
+                'lang' => $this->langValidationRule($request),
+                'file' => 'required|file|extensions:json,php|max:2048',
+                'prefix' => 'nullable|string|regex:/^[a-zA-Z0-9_.-]*$/',
+            ]);
 
-            if (!is_array($json)) {
+            $lang = strtolower($validated['lang']);
+            $prefix = $validated['prefix'] ?? '';
+            $file = $request->file('file');
+            $extension = $file->getClientOriginalExtension();
+
+            // Parsowanie pliku
+            if ($extension === 'json') {
+                $data = json_decode(file_get_contents($file->getRealPath()), true);
+                if (!is_array($data)) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => ['file' => 'Invalid JSON format'],
+                    ], 422);
+                }
+            } elseif ($extension === 'php') {
+                $data = include $file->getRealPath();
+                if (!is_array($data)) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => ['file' => 'Invalid PHP array format'],
+                    ], 422);
+                }
+            } else {
                 return response()->json([
                     'success' => false,
-                    'errors' => ['file' => 'Invalid JSON format'],
+                    'errors' => ['file' => 'Unsupported file format'],
                 ], 422);
             }
 
             $importedTranslations = [];
-            foreach ($json as $key => $value) {
-                if (!preg_match('/^[a-zA-Z0-9_.-]+$/', $key)) {
+            $successCount = 0;
+            $skippedCount = 0;
+
+            foreach ($data as $key => $value) {
+                // Walidacja klucza
+                if (!is_string($key) || !preg_match('/^[a-zA-Z0-9_.-]+$/', $key)) {
+                    Log::warning('Invalid translation key skipped', [
+                        'key' => $key,
+                        'lang' => $lang,
+                    ]);
+                    $skippedCount++;
                     continue;
                 }
 
+                // Dodanie przedrostka
+                $newKey = $prefix ? "{$prefix}.{$key}" : $key;
+
+                // Zapis tłumaczenia
                 $translation = Translation::updateOrCreate(
-                    ['lang' => $lang, 'key' => $key],
-                    ['value' => $value]
+                    ['lang' => $lang, 'key' => $newKey],
+                    ['value' => is_string($value) ? $value : '']
                 );
+
                 $importedTranslations[] = [
                     'id' => $translation->id,
                     'key' => $translation->key,
                     'value' => $translation->value,
                     'readonly' => $translation->readonly,
                 ];
+                $successCount++;
 
-                // Czyszczenie cache po każdej zmianie
-                $this->clearTranslationCache($lang, $key);
+                // Czyszczenie cache
+                $this->clearTranslationCache($lang, $newKey);
             }
+
+            Log::info('Translations imported', [
+                'lang' => $lang,
+                'prefix' => $prefix,
+                'success_count' => $successCount,
+                'skipped_count' => $skippedCount,
+                'file_extension' => $extension,
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => __('success.imported'),
                 'translations' => $importedTranslations,
+                'success_count' => $successCount,
+                'skipped_count' => $skippedCount,
             ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning('Validation error in Translation import', [
+                'errors' => $e->errors(),
+                'request' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => __('validation_error'),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
-            Log::error('Translation import error: ' . $e->getMessage());
+            Log::error('Translation import error', [
+                'message' => $e->getMessage(),
+                'request' => $request->all(),
+            ]);
 
             return response()->json([
                 'success' => false,
@@ -470,45 +546,68 @@ class TranslationController extends \App\Http\Controllers\Controller
 
     public function destroy(Request $request, $id)
     {
-        $translation = Translation::find($id);
+        try {
+            $translation = Translation::find($id);
 
-        if (!$translation) {
+            if (!$translation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => __('translation_not_found'),
+                ], 404);
+            }
+
+            if ($translation->readonly) {
+                return response()->json([
+                    'success' => false,
+                    'message' => __('cannot_delete_system_translation'),
+                ], 403);
+            }
+
+            $lang = $translation->lang;
+            $key = $translation->key;
+
+            $translation->delete();
+
+            // Czyszczenie cache po usunięciu
+            $this->clearTranslationCache($lang, $key);
+
+            return response()->json([
+                'success' => true,
+                'message' => __('success.deleted'),
+            ], 200);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Database error in Translation destroy', [
+                'message' => $e->getMessage(),
+                'id' => $id,
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => __('translation_not_found'),
-            ], 404);
-        }
+                'message' => __('database_error'),
+                'error' => 'An error occurred while deleting the translation.',
+            ], 500);
+        } catch (\Exception $e) {
+            Log::error('Unexpected error in Translation destroy', [
+                'message' => $e->getMessage(),
+                'id' => $id,
+            ]);
 
-        if ($translation->readonly) {
             return response()->json([
                 'success' => false,
-                'message' => __('cannot_delete_system_translation'),
-            ], 403);
+                'message' => __('unexpected_error'),
+                'error' => 'An unexpected error occurred.',
+            ], 500);
         }
-
-        $lang = $translation->lang;
-        $key = $translation->key;
-
-        $translation->delete();
-
-        // Czyszczenie cache po usunięciu
-        $this->clearTranslationCache($lang, $key);
-
-        return response()->json([
-            'success' => true,
-            'message' => __('success.deleted'),
-        ], 200);
     }
 
-    protected function clearTranslationCache(string $locale): void
+    protected function clearTranslationCache(string $locale, string $key): void
     {
         \Cache::forget("translations.{$locale}");
 
-        Log::info('Translation cache fully cleared for locale', [
+        Log::info('Translation cache cleared', [
             'locale' => $locale,
+            'key' => $key,
         ]);
         $this->translationService->generateJsonFiles();
     }
-
-
 }
